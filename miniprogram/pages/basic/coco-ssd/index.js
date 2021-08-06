@@ -51,14 +51,16 @@ Page({
   },
 
   initClassifier() {
+    const _this = this
     this.showLoadingToast()
-
+    console.log(app.globalData.systemInfo.screenWidth,this.data.cameraBlockHeight)
     this.classifier = new Classifier('back', {
       width: app.globalData.systemInfo.screenWidth,
       height: this.data.cameraBlockHeight
     })
-
+    // debugger
     this.classifier.load().then(_ => {
+      console.log(_this.classifier)
       this.hideLoadingToast()
     }).catch(err => {
       console.log(err)
