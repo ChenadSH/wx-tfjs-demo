@@ -10,7 +10,7 @@ const color = 'aqua'
 const lineWidth = 2
 
 // 以下两个为 SSD 模型的地址，请下载放到自己的服务器，然后修改以下链接
-const SSD_NET_URL = 'https://h5.dayanweb.cn/cxTest/tfmodel/cup/model.json'
+const SSD_NET_URL = 'https://h5.dayanweb.cn/cxTest/tfmodel/cup/mul/model.json'
 // const SSD_NET_URL = 'https://ai.flypot.cn/models/coco-ssd/model.json'
 // const SSD_NET_BIN_URL = 'https://ai.flypot.cn/models/mobilenet/group1-shard1of1'
 const img_size = 224
@@ -19,12 +19,16 @@ const threshold = 0.7;
 // 所有标签分类
 let classesDir = {
   1: {
-      name: 'GreyCup',
+      name: 'cup',
       id: 1,
   },
   2: {
-      name: 'Other',
+      name: 'pen',
       id: 2,
+  },
+  3:{
+    name: 'disk',
+    id: 3, 
   }
 }
 
@@ -73,21 +77,27 @@ export class Classifier {
   detect(frame) {
     const _this = this
     return new Promise((resolve, reject) => {
-      let tensor = tf.tidy(() => {
+      let tensor = tf.tidy(() => {// 该方法可以执行完释放缓存
         const temp = tf.browser.fromPixels({
           data: new Uint8Array(frame.data),
           width: frame.width,
           height: frame.height,
         }, 3)
-        const sliceOptions = getFrameSliceOptions(this.cameraPosition, frame.width, frame.height, this.displaySize.width, this.displaySize.height)
+        // new Uint8Array(buffer) -- buffer图片转uint8 
+        // const imgTsResized = tf.node.decodeImage(new Uint8Array(buffer),[sizeW,sizeH]) -- 转tensor格式，并调整尺寸
+        // imgTsResized.toFloat().sub(255/2).div(255/2).reshape([1,244,244,3]) // 归1化，sub先减去255的一半，然后除以255的一半，得到-1到1的范围值
+        // const sliceOptions = getFrameSliceOptions(this.cameraPosition, frame.width, frame.height, this.displaySize.width, this.displaySize.height)
         // tf.image.resizeBilinear(temp,[img_size, img_size]) //tf.reshape(temp,[1, ...temp.shape])
-        // return tf.slice(temp, [0, 0, 0], [-1, -1, 3])
-        return  tf.image.resizeBilinear(tf.slice(temp, [0, 0, 0], [-1, -1, 3]),[this.displaySize.height, this.displaySize.width])// temp.slice(sliceOptions.start, sliceOptions.size).resizeBilinear([this.displaySize.height, this.displaySize.width]).asType('int32')
+        // return tf.slice(temp, [0, 0, 0], [-1, -1, 3])//[this.displaySize.height, this.displaySize.width]
+        let reuslt = tf.image.resizeBilinear(tf.slice(temp, [0, 0, 0], [-1, -1, 3]),[img_size, img_size])
+        reuslt = tf.cast(reuslt,'int32')
+        reuslt = tf.reshape(reuslt,[1,...reuslt.shape])
+        return reuslt // temp.slice(sliceOptions.start, sliceOptions.size).resizeBilinear([this.displaySize.height, this.displaySize.width]).asType('int32')
       })
       // debugger
-      tensor = tf.cast(tensor,'int32')
-      tensor = tf.reshape(tensor,[1,...tensor.shape])//...tensor.shape [508,320,3]
-      console.log(tensor.shape)
+      // tensor = tf.cast(tensor,'int32')
+      //...tensor.shape [508,320,3]
+      // console.log(tensor.shape)
       // console.log(tensor)
       // console.log(tensor.toString())
       // const res = this.ssdNet.executeAsync(tensor)
@@ -106,12 +116,28 @@ export class Classifier {
       // ];{image_tensor:tensor}
       this.ssdNet.executeAsync(tensor).then(res => {//,'detection_scores:0'
         tensor.dispose()
-        console.log(res)
+        tensor = null
+        // console.log(res)
         // ['num_detections', 'detection_boxes', 'detection_classes', 'detection_scores', 'raw_detection_boxes', 'raw_detection_scores, 'detection_anchor_indices', 'detection_multiclass_scores'] 
         //Getting predictions
-        const boxes = res[0].arraySync();
-        const scores = res[5].arraySync();//res[3].arraySync();//
-        const classes = res[6].dataSync();
+
+        // const boxes = res[7].arraySync(); // box
+        // const scores = res[0].arraySync();//res[3].arraySync(); // 结果全是1-有问题
+        // const classes = res[3].dataSync();// 1是标签对应的id  
+        // console.log('1:'+res[1].arraySync())
+        // console.log('3:'+res[3].arraySync())
+        // console.log('4:'+res[4].arraySync())
+        // console.log('0:',res[0].arraySync())
+        // console.log('5:',res[5].arraySync())
+        // console.log('6:',res[6].arraySync())
+        let boxes = res[1].arraySync();
+        let scores = res[0].arraySync();//res[3].arraySync();//5
+        let classes = res[6].dataSync();
+
+
+        // const boxes = res[0].arraySync();
+        // const scores = res[5].arraySync();//res[3].arraySync();//5
+        // const classes = res[6].dataSync();
         // console.log(classes)
         // console.log(boxes)
         // console.log(scores)
@@ -120,11 +146,14 @@ export class Classifier {
         // console.log(r)
 
         const detections = _this.buildDetectedObjects(scores, threshold,boxes, classes, classesDir);
-          console.log(detections)
+        // console.log(detections)
+        boxes = null 
+        scores = null 
+        classes = null
+        res = null
         resolve(detections)
       }).catch(err => {
         console.log(err)
-        tensor.dispose()
         reject()
       })
 
@@ -148,20 +177,20 @@ export class Classifier {
     // }
     // console.log(boxes)
 
-    classes.forEach((score, i) => {
+    scores[0].forEach((score, i) => {
       if (score > threshold) {
         const bbox = [];
         const minY = boxes[0][i][0] * this.displaySize.height // video_frame.offsetHeight;
         const minX = boxes[0][i][1] * this.displaySize.width // video_frame.offsetWidth;
         const maxY = boxes[0][i][2] * this.displaySize.height // video_frame.offsetHeight;
         const maxX = boxes[0][i][3] * this.displaySize.width // video_frame.offsetWidth;
-        bbox[0] = minX;
-        bbox[1] = minY;
-        bbox[2] = maxX - minX;
-        bbox[3] = maxY - minY;
+        bbox[0] = Math.round(minX);
+        bbox[1] = Math.round(minY);
+        bbox[2] = Math.round(maxX - minX);
+        bbox[3] = Math.round(maxY - minY);
+        // console.log(boxes[0][i])
         detectionObjects.push({
-          class: 'GreyCup',
-          // label: classesDir[classes[i]].name,
+          label: Math.ceil(classes[i]),
           score: score.toFixed(4),
           bbox: bbox
         })
@@ -173,9 +202,11 @@ export class Classifier {
     if (!ctx && !boxes) {
       return
     }
+    ctx.clearRect(0,0,this.displaySize.width,this.displaySize.height)
 
+    //保存当前画的状态
+    ctx.save();
     const minScore = 0.3
-
     ctx.setFontSize(fontSize)
     ctx.strokeStyle = color
     ctx.lineWidth = lineWidth
@@ -185,11 +216,16 @@ export class Classifier {
         ctx.rect(...(box.bbox))
         ctx.stroke()
         ctx.setFillStyle(color)
-        ctx.fillText(box['class'], box.bbox[0], box.bbox[1] - 5)
+        // console.log(box['label'])
+        try{
+          ctx.fillText(classesDir[box['label']].name+':'+box.score, box.bbox[0], box.bbox[1] - 5)
+        }catch(e){}
       }
     })
 
     ctx.draw()
+        //恢复当前画的状态
+        ctx.restore();
     return true
   }
 

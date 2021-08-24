@@ -16,7 +16,8 @@ Page({
    */
   data: {
     cameraBlockHeight: app.globalData.systemInfo.screenHeight - app.globalData.CustomBar,
-    predicting: false
+    predicting: false,
+    resultWord: 'null'
   },
 
   /**
@@ -41,9 +42,8 @@ Page({
     let count = 0
     const listener = context.onCameraFrame((frame) => {
       count = count + 1
-      if (count === 3) {
+      if (count === 10) {
         count = 0
-
         this.executeClassify(frame)
       }
     })
@@ -53,14 +53,14 @@ Page({
   initClassifier() {
     const _this = this
     this.showLoadingToast()
-    console.log(app.globalData.systemInfo.screenWidth,this.data.cameraBlockHeight)
+    // console.log(app.globalData.systemInfo.screenWidth,this.data.cameraBlockHeight)
     this.classifier = new Classifier('back', {
       width: app.globalData.systemInfo.screenWidth,
       height: this.data.cameraBlockHeight
     })
     // debugger
     this.classifier.load().then(_ => {
-      console.log(_this.classifier)
+      // console.log(_this.classifier)
       this.hideLoadingToast()
     }).catch(err => {
       console.log(err)
@@ -88,10 +88,11 @@ Page({
       }, () => {
         this.classifier.detect(frame).then((res) => {
           this.classifier.drawBoxes(this.ctx, res)
-
           this.setData({
+            resultWord : res.length,
             predicting: false,
           })
+          res = null
           // console.log(res)
         }).catch((err) => {
           console.log(err)
